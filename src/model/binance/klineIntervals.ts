@@ -1,0 +1,17 @@
+export enum KlineIntervals {
+  interval1m = "1m",
+  interval3m = "3m",
+  interval5m = "5m",
+  interval15m = "15m",
+  interval30m = "30m",
+  interval1h = "1h",
+  interval2h = "2h",
+  interval4h = "4h",
+  interval6h = "6h",
+  interval8h = "8h",
+  interval12h = "12h",
+  interval1d = "1d",
+  interval3d = "3d",
+  interval1w = "1w",
+  interval1M = "1M",
+}
