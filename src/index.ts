@@ -56,6 +56,11 @@ if (!channelName)
               Number(message.k.c)
             );
             if (gain >= minPercentageGain || gain <= minPercentageLoss) {
+              console.log(
+                `${new Date().toISOString()} Processing message: ${JSON.stringify(
+                  message
+                )}`
+              );
               sendChannelMessage(botToken, channelName, message, {
                 gain: gain,
               });
@@ -74,6 +79,11 @@ if (!channelName)
               Number(message.k.c)
             );
             if (gain >= 0.5 || gain <= -0.5) {
+              console.log(
+                `${new Date().toISOString()} Processing message: ${JSON.stringify(
+                  message
+                )}`
+              );
               sendChannelMessage(botToken, channelName, message, {
                 gain: gain,
               });
