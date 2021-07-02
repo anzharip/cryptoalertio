@@ -18,6 +18,15 @@ const minPercentageGain = process.env.MIN_PERCENTAGE_GAIN
 const minPercentageLoss = process.env.MIN_PERCENTAGE_LOSS
   ? Number(process.env.MIN_PERCENTAGE_LOSS)
   : -3;
+const btcMinPercentageGain = process.env.BTC_MIN_PERCENTAGE_GAIN
+  ? Number(process.env.BTC_MIN_PERCENTAGE_GAIN)
+  : 0.5;
+const btcMinPercentageLoss = process.env.BTC_MIN_PERCENTAGE_LOSS
+  ? Number(process.env.BTC_MIN_PERCENTAGE_LOSS)
+  : -0.5;
+const windowDuration = process.env.WINDOW_DURATION
+  ? Number(process.env.WINDOW_DURATION)
+  : 5000;
 
 if (!botToken)
   throw Error("Environment variable TELEGRAM_BOT_TOKEN must be defined. ");
@@ -57,7 +66,7 @@ if (!channelName)
               Number(message.k.o),
               Number(message.k.c)
             );
-            if (gain >= 0.5 || gain <= -0.5) {
+            if (gain >= btcMinPercentageGain || gain <= btcMinPercentageLoss) {
               return true;
             }
           }
@@ -82,7 +91,7 @@ if (!channelName)
 
       merge(filterGain, btcFilterGain)
         .pipe(
-          windowTime(5000),
+          windowTime(windowDuration),
           map((window) =>
             window.pipe(
               distinct((message) => {
