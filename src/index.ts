@@ -1,10 +1,12 @@
 import * as dotenv from "dotenv";
-import { filter } from "rxjs/operators";
+import { merge } from "rxjs";
+import { distinct, filter, map, mergeAll, windowTime } from "rxjs/operators";
 import { KlineIntervals } from "./model/binance/klineIntervals";
 import { Markets } from "./model/binance/markets";
 import { BinanceWsService } from "./service/binanceWsService";
 import { calculatePercentageGain, sendChannelMessage } from "./utils/utils";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).WebSocket = require("ws");
 dotenv.config();
 
@@ -48,56 +50,74 @@ if (!channelName)
         })
       );
 
-      binanceWsObservable.subscribe(
-        (message) => {
-          if ("s" in message) {
-            const gain = calculatePercentageGain(
-              Number(message.k.o),
-              Number(message.k.c)
-            );
-            if (gain >= minPercentageGain || gain <= minPercentageLoss) {
-              console.log(
-                `${new Date().toISOString()} Processing message: ${JSON.stringify(
-                  message
-                )}`
-              );
-              sendChannelMessage(botToken, channelName, message, {
-                gain: gain,
-              });
-            }
-          }
-        },
-        (error) => console.log(error),
-        () => console.log("WebSocket connection is closed. ")
-      );
-
-      btcUsdtObservable.subscribe(
-        (message) => {
+      const btcFilterGain = btcUsdtObservable.pipe(
+        filter((message) => {
           if ("s" in message) {
             const gain = calculatePercentageGain(
               Number(message.k.o),
               Number(message.k.c)
             );
             if (gain >= 0.5 || gain <= -0.5) {
+              return true;
+            }
+          }
+          return false;
+        })
+      );
+
+      const filterGain = binanceWsObservable.pipe(
+        filter((message) => {
+          if ("s" in message) {
+            const gain = calculatePercentageGain(
+              Number(message.k.o),
+              Number(message.k.c)
+            );
+            if (gain >= minPercentageGain || gain <= minPercentageLoss) {
+              return true;
+            }
+          }
+          return false;
+        })
+      );
+
+      merge(filterGain, btcFilterGain)
+        .pipe(
+          windowTime(5000),
+          map((window) =>
+            window.pipe(
+              distinct((message) => {
+                if ("e" in message) {
+                  return message.s;
+                }
+              })
+            )
+          ),
+          mergeAll()
+        )
+        .subscribe(
+          (message) => {
+            if ("e" in message) {
               console.log(
                 `${new Date().toISOString()} Processing message: ${JSON.stringify(
                   message
                 )}`
               );
+              const gain = calculatePercentageGain(
+                Number(message.k.o),
+                Number(message.k.c)
+              );
               sendChannelMessage(botToken, channelName, message, {
                 gain: gain,
               });
             }
-          }
-        },
-        (error) => console.log(error),
-        () => console.log("WebSocket connection is closed. ")
-      );
-
+          },
+          (error) => console.error(error),
+          () => console.log("WebSocket connection is closed. ")
+        );
       console.log("Crypto Alert service started. ");
     })
 
     .catch((error) => {
-      console.log(error);
+      console.error(error);
     });
 })();
