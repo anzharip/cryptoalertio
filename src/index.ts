@@ -1,9 +1,19 @@
+import { Point } from "@influxdata/influxdb-client";
 import * as dotenv from "dotenv";
 import { merge } from "rxjs";
-import { distinct, filter, map, mergeAll, windowTime } from "rxjs/operators";
+import {
+  count,
+  distinct,
+  filter,
+  map,
+  mergeAll,
+  windowTime,
+} from "rxjs/operators";
 import { KlineIntervals } from "./model/binance/klineIntervals";
 import { Markets } from "./model/binance/markets";
 import { BinanceWsService } from "./service/binanceWsService";
+import { influxDBWritePoint } from "./service/influxDbService";
+import { LogService } from "./service/logService";
 import { calculatePercentageGain, sendChannelMessage } from "./utils/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +22,10 @@ dotenv.config();
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const channelName = process.env.TELEGRAM_CHANNEL_NAME;
+const influxUrl = process.env.INFLUXDB_URL;
+const influxToken = process.env.INFLUXDB_TOKEN;
+const influxOrg = process.env.INFLUXDB_ORG;
+const influxBucket = process.env.INFLUXDB_BUCKET;
 const minPercentageGain = process.env.MIN_PERCENTAGE_GAIN
   ? Number(process.env.MIN_PERCENTAGE_GAIN)
   : 3;
@@ -32,6 +46,14 @@ if (!botToken)
   throw Error("Environment variable TELEGRAM_BOT_TOKEN must be defined. ");
 if (!channelName)
   throw Error("Environment variable TELEGRAM_CHANNEL_NAME must be defined. ");
+if (!influxUrl)
+  throw Error("Environment variable INFLUXDB_URL must be defined. ");
+if (!influxToken)
+  throw Error("Environment variable INFLUXDB_TOKEN must be defined. ");
+if (!influxOrg)
+  throw Error("Environment variable INFLUXDB_ORG must be defined. ");
+if (!influxBucket)
+  throw Error("Environment variable INFLUXDB_BUCKET must be defined. ");
 
 (async () => {
   const socket = BinanceWsService.createWebSocket(
@@ -41,7 +63,40 @@ if (!channelName)
 
   socket
     .then((socket) => {
-      console.log("Preparing WebSocket connection. ");
+      LogService.log({
+        message: `Preparing WebSocket connection. `,
+      });
+
+      const metricObservable = socket.pipe(
+        windowTime(1000),
+        map((window) => window.pipe(count())),
+        mergeAll()
+      );
+
+      metricObservable.subscribe(
+        (message) => {
+          const point = new Point("binance_ws_transactions").floatField(
+            "tps",
+            message
+          );
+          const defaultTag = { host: "host1" };
+          influxDBWritePoint(
+            influxUrl,
+            influxToken,
+            influxOrg,
+            influxBucket,
+            defaultTag,
+            point
+          );
+          return;
+        },
+        (error) => LogService.error({ message: error }),
+        () =>
+          LogService.log({
+            message: `Metric observable completed. `,
+          })
+      );
+
       const binanceWsObservable = socket.pipe(
         filter((message) => {
           if ("e" in message) {
@@ -106,11 +161,10 @@ if (!channelName)
         .subscribe(
           (message) => {
             if ("e" in message) {
-              console.log(
-                `${new Date().toISOString()} Processing message: ${JSON.stringify(
-                  message
-                )}`
-              );
+              LogService.log({
+                message: `Processing message: ${JSON.stringify(message)}`,
+              });
+
               const gain = calculatePercentageGain(
                 Number(message.k.o),
                 Number(message.k.c)
@@ -120,13 +174,18 @@ if (!channelName)
               });
             }
           },
-          (error) => console.error(error),
-          () => console.log("WebSocket connection is closed. ")
+          (error) => LogService.error({ message: error }),
+          () =>
+            LogService.log({
+              message: `WebSocket connection is closed. `,
+            })
         );
-      console.log("Crypto Alert service started. ");
+      LogService.log({
+        message: `Crypto Alert service started. `,
+      });
     })
 
     .catch((error) => {
-      console.error(error);
+      LogService.error({ message: error });
     });
 })();
